@@ -20,38 +20,19 @@ namespace Velkoz
     internal class Program
     {
         public const string ChampionName = "Velkoz";
+        
+        //Orbwalker instance
+        public static Orbwalking.Orbwalker Orbwalker;
 
         //Spells
-        public static List<Spell.SpellBase> SpellList = new List<Spell.SpellBase>();
+        public static List<Spell> SpellList = new List<Spell>();
 
-        public int LastCastAttemptT { get; set; }
-        public static List<Vector2> Perpendiculars { get; set; }
-        public static Vector2 Direction { get; set; }
-        public static Spell.Skillshot QSplit;
-        public static Spell.Skillshot QDummy;
-        public static Spell.Skillshot Q { get; set; }
-        public static Spell.Skillshot W { get; set; }
-        public static Spell.Skillshot E { get; set; }
-        public static Spell.Skillshot R { get; set; }
-
-        public static Menu ComboMenu { get; private set; }
-
-        public static Menu HarassMenu { get; private set; }
-
-        public static Menu LaneMenu { get; private set; }
-
-        public static Menu MiscMenu { get; private set; }
-
-        public static Menu DrawMenu { get; private set; }
-
-        private static Menu menuIni;
-
-        public static MissileClient Qmiss = null;
-
-        public const int MissileSpeed = 2100;
-        public const int CastDelay = 250;
-        public const int SpellWidth = 45;
-        public const int SpellRange = 1100;
+        public static Spell Q;
+        public static Spell QSplit;
+        public static Spell QDummy;
+        public static Spell W;
+        public static Spell E;
+        public static Spell R;
 
         public static SpellSlot IgniteSlot;
 
@@ -60,10 +41,10 @@ namespace Velkoz
         //Menu
         public static Menu Config;
 
-        private static AIHeroClient Player;
+        private static Obj_AI_Hero Player;
         private static void Main(string[] args)
         {
-            Loading.OnLoadingComplete += Game_OnGameLoad;
+            CustomEvents.Game.OnGameLoad += Game_OnGameLoad;
         }
 
         private static void Game_OnGameLoad(EventArgs args)
@@ -74,42 +55,30 @@ namespace Velkoz
 
             //Create the spells
 
-            QDummy = new Spell.Skillshot(SpellSlot.Q, 1100, SkillShotType.Linear, 250, int.MaxValue, 50)
-            {
-                AllowedCollisionCount = 0
-            };
-            QSplit = new Spell.Skillshot(SpellSlot.Q, 1100, SkillShotType.Linear, 250, 2100, 50)
-            {
-                MinimumHitChance = HitChance.High,
-                AllowedCollisionCount = 0
-            };
-            Q = new Spell.Skillshot(SpellSlot.Q, 1100, SkillShotType.Linear, 250, 1300, 50)
-            {
-                MinimumHitChance = HitChance.High,
-                AllowedCollisionCount = 0
-            };
-            W = new Spell.Skillshot(SpellSlot.W, 1050, SkillShotType.Linear, 250, 1700, 80)
-            {
-                MinimumHitChance = HitChance.High,
-                AllowedCollisionCount = int.MaxValue
-            };
-            E = new Spell.Skillshot(SpellSlot.E, 850, SkillShotType.Circular, 500, 1500, 120)
-            {
-                MinimumHitChance = HitChance.High,
-                AllowedCollisionCount = int.MaxValue
-            };
-            R = new Spell.Skillshot(SpellSlot.R, 1550, SkillShotType.Linear)
-            {
-                AllowedCollisionCount = int.MaxValue
-            };
+            Q = new Spell(SpellSlot.Q, 1200);
+            QSplit = new Spell(SpellSlot.Q, 1100);
+            QDummy = new Spell(SpellSlot.Q, (float)Math.Sqrt(Math.Pow(Q.Range, 2) + Math.Pow(QSplit.Range, 2)));
+            W = new Spell(SpellSlot.W, 1200);
+            E = new Spell(SpellSlot.E, 800);
+            R = new Spell(SpellSlot.R, 1550);
 
-            IgniteSlot = Player.GetSpellSlotFromName("SummonerDot");
+            IgniteSlot = Player.GetSpellSlot("SummonerDot");
+
+
+            Q.SetSkillshot(0.25f, 50f, 1300f, true, SkillshotType.SkillshotLine);
+            QSplit.SetSkillshot(0.25f, 55f, 2100, true, SkillshotType.SkillshotLine);
+            QDummy.SetSkillshot(0.25f, 55f, float.MaxValue, false, SkillshotType.SkillshotLine);
+            W.SetSkillshot(0.25f, 85f, 1700f, false, SkillshotType.SkillshotLine);
+            E.SetSkillshot(0.5f, 100f, 1500f, false, SkillshotType.SkillshotCircle);
+            R.SetSkillshot(0.3f, 1f, float.MaxValue, false, SkillshotType.SkillshotLine);
+
             
 
             SpellList.Add(Q);
             SpellList.Add(W);
             SpellList.Add(E);
             SpellList.Add(R);
+
 
             menuIni = MainMenu.AddMenu(ChampionName, ChampionName);
             menuIni.AddGroupLabel("Welcome to the Worst VelKoz addon!");
@@ -170,18 +139,15 @@ namespace Velkoz
 
         private static void Obj_SpellMissile_OnCreate(GameObject sender, EventArgs args)
         {
-            if (sender.IsMe && sender.IsAlly)
+            if (!(sender is MissileClient)) return;
+            var missile = (MissileClient)sender;
+            if (missile.SpellCaster != null && missile.SpellCaster.IsValid && missile.SpellCaster.IsMe &&
+                missile.SData.Name.Equals("VelkozQMissile", StringComparison.InvariantCultureIgnoreCase))
             {
-                MissileClient missile = (MissileClient)sender;
-                if (missile.SData.Name != null && missile.SData.Name == "VelkozQMissile")
-                    QMissile = missile;
-                Direction = (missile.EndPosition.To2D() - missile.StartPosition.To2D()).Normalized();
-                Perpendiculars.Add(Direction.Perpendicular());
-                Perpendiculars.Add(Direction.Perpendicular2());
+                QMissile = missile;
             }
         }
         
-
         static void Spellbook_OnUpdateChargedSpell(Spellbook sender, SpellbookUpdateChargeableSpellEventArgs args)
         {
             var flags = Orbwalker.ActiveModesFlags;
@@ -238,11 +204,11 @@ namespace Velkoz
 
         private static void UseSpells(bool useQ, bool useW, bool useE, bool useR, bool useIgnite)
         {
-            var qTarget = TargetSelector.GetTarget(Q.Range, DamageType.Magical);
-            var qDummyTarget = TargetSelector.GetTarget(QDummy.Range, DamageType.Magical);
-            var wTarget = TargetSelector.GetTarget(W.Range, DamageType.Magical);
-            var eTarget = TargetSelector.GetTarget(E.Range, DamageType.Magical);
-            var rTarget = TargetSelector.GetTarget(R.Range, DamageType.Magical);
+            var qTarget = TargetSelector.GetTarget(Q.Range, TargetSelector.DamageType.Magical);
+            var qDummyTarget = TargetSelector.GetTarget(QDummy.Range, TargetSelector.DamageType.Magical);
+            var wTarget = TargetSelector.GetTarget(W.Range, TargetSelector.DamageType.Magical);
+            var eTarget = TargetSelector.GetTarget(E.Range, TargetSelector.DamageType.Magical);
+            var rTarget = TargetSelector.GetTarget(R.Range, TargetSelector.DamageType.Magical);
 
 
             if (useW && wTarget != null && W.IsReady())
@@ -266,20 +232,30 @@ namespace Velkoz
                 }
             }
 
-            if (qDummyTarget != null && useQ && Q.IsReady() && Q.Name == "VelkozQ")
+            if (useQ && qTarget != null && Q.IsReady() && Q.Instance.ToggleState == 0)
+            {
+                if (Q.Cast(qTarget) == Spell.CastStates.SuccessfullyCasted)
+                    return;
+            }
+
+            if (qDummyTarget != null && useQ && Q.IsReady() && Q.Instance.ToggleState == 0)
             {
                 if (qTarget != null) qDummyTarget = qTarget;
-                QDummy.CastDelay = (int)(Q.CastDelay + Q.Range / Q.Speed * 1000 + QSplit.Range / QSplit.Speed * 1000);
+                QDummy.Delay = Q.Delay + Q.Range / Q.Speed * 1000 + QSplit.Range / QSplit.Speed * 1000;
 
                 var predictedPos = QDummy.GetPrediction(qDummyTarget);
-                if (predictedPos.HitChance >= HitChance.High)
+                if (predictedPos.Hitchance >= HitChance.High)
                 {
-                    for (var i = -1; i < 1;)
+                    for (var i = -1; i < 1; i = i + 2)
                     {
-                        const float Alpha = 28 * (float)Math.PI / 180;
-                        Vector2 cp = ObjectManager.Player.ServerPosition.To2D() +
-                                     (predictedPos.CastPosition.To2D() - ObjectManager.Player.ServerPosition.To2D()).Rotated
-                                         (i * Alpha);
+                        var alpha = 28 * (float)Math.PI / 180;
+                        var cp = ObjectManager.Player.ServerPosition.To2D() +
+                                 (predictedPos.CastPosition.To2D() - ObjectManager.Player.ServerPosition.To2D()).Rotated
+                                     (i * alpha);
+                        if (
+                            Q.GetCollision(ObjectManager.Player.ServerPosition.To2D(), new List<Vector2> { cp }).Count ==
+                            0 &&
+                            QSplit.GetCollision(cp, new List<Vector2> { predictedPos.CastPosition.To2D() }).Count == 0) 
                         {
                             Q.Cast((Vector3)cp);
                             return;
@@ -350,35 +326,8 @@ namespace Velkoz
                 return;
             }
             
-            if (QMissile != null && Q.IsReady() && Q.Name == "VelkozQSplitActivate")
-            {
-                foreach (var perpendicular in Perpendiculars)
-                {
-                    if (QMissile != null)
-                    {
-                        var startPos = QMissile.Position.To2D();
-                        var endPos = QMissile.Position.To2D() + SpellRange * perpendicular;
-
-                        var collisionObjects = ObjectManager.Get<Obj_AI_Base>()
-                            .Where(o => o.IsEnemy && !o.IsDead && !o.IsStructure() && !o.IsWard() && !o.IsInvulnerable
-                                    && o.Distance(Player, true) < (SpellRange + 200).Pow()
-                                    && o.ServerPosition.To2D().Distance(startPos, endPos, true, true) <= (SpellWidth * 2 + o.BoundingRadius).Pow());
-
-                        var colliding = collisionObjects
-                            .Where(o => o.Type == GameObjectType.AIHeroClient && o.IsValidTarget()
-                                    && Prediction.Position.Collision.LinearMissileCollision(o, startPos, endPos, MissileSpeed, SpellWidth, CastDelay, (int)o.BoundingRadius))
-                                .OrderBy(o => o.Distance(Player, true)).FirstOrDefault();
-
-                        if (colliding != null)
-                        {
-                            EloBuddy.Player.CastSpell(SpellSlot.Q);
-                            QMissile = null;
-                        }
-                    }
-                }
-            }
-
-            if (QMissile != null && QMissile.IsValid && Q.Name == "VelkozQSplitActivate")
+            if (QMissile != null && QMissile.IsValid && Q.Instance.ToggleState == 2 &&
+                Utils.TickCount - Q.LastCastAttemptT < 2000)
             {
                 var qMissilePosition = QMissile.Position.To2D();
                 var perpendicular = (QMissile.EndPosition - QMissile.StartPosition).To2D().Normalized().Perpendicular();
@@ -389,7 +338,7 @@ namespace Velkoz
                 var potentialTargets = new List<Obj_AI_Base>();
                 foreach (
                     var enemy in
-                        ObjectManager.Get<AIHeroClient>()
+                        ObjectManager.Get<Obj_AI_Hero>()
                             .Where(
                                 h =>
                                     h.IsValidTarget() &&
@@ -399,23 +348,22 @@ namespace Velkoz
                     potentialTargets.Add(enemy);
                 }
 
-                QSplit.RangeCheckSource = qMissilePosition.To3D();
-                QSplit.SourcePosition = qMissilePosition.To3D();
-                
+                QSplit.UpdateSourcePosition(qMissilePosition.To3D(), qMissilePosition.To3D());
+
                 foreach (
                     var enemy in
-                        ObjectManager.Get<AIHeroClient>()
+                        ObjectManager.Get<Obj_AI_Hero>()
                             .Where(
                                 h =>
                                     h.IsValidTarget() &&
                                     (potentialTargets.Count == 0 ||
-                                     h.NetworkId == potentialTargets.OrderBy(t => t.Health / Player.GetSpellDamage(t, SpellSlot.Q)).ToList()[0].NetworkId) &&
+                                     h.NetworkId == potentialTargets.OrderBy(t => t.Health / Q.GetDamage(t)).ToList()[0].NetworkId) &&
                                     (h.ServerPosition.To2D().Distance(qMissilePosition, QMissile.EndPosition.To2D(), true) > Q.Width + h.BoundingRadius)))
                 {
                     var prediction = QSplit.GetPrediction(enemy);
                     var d1 = prediction.UnitPosition.To2D().Distance(qMissilePosition, lineSegment1End, true);
                     var d2 = prediction.UnitPosition.To2D().Distance(qMissilePosition, lineSegment2End, true);
-                    if (prediction.HitChance >= HitChance.High &&
+                    if (prediction.Hitchance >= HitChance.High &&
                         (d1 < QSplit.Width + enemy.BoundingRadius || d2 < QSplit.Width + enemy.BoundingRadius))
                     {
                         Q.Cast();
